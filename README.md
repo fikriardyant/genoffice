@@ -34,6 +34,15 @@ Word, Excel, PowerPoint and PDF files, edited by you and your AI, saved back in 
 
 GenOffice is a free, open-source alternative to Microsoft Office for macOS,
 Windows and Linux. It opens and saves native `.docx`, `.xlsx` and `.pptx`
+
+> **Fork note — 9Router compatibility.** This fork sends `stream: false`
+> explicitly on non-streaming OpenAI-compatible chat calls
+> (`packages/ai-provider/src/protocols/openai-compatible.ts`,
+> `chatOpenAiCompatible`). Gateways like 9Router that default to SSE when
+> the field is missing would otherwise return `text/event-stream` to a
+> caller expecting a single JSON body (`AI returned a non-JSON response`).
+> Upstream fix proposed in branch `fix/nonstream-9router`.
+
 files, edits PDF, Markdown and HTML, and puts an AI agent next to every
 document — not a chat box bolted on the side, but an editor that reads the
 file, makes the change, and shows you exactly what it touched.
