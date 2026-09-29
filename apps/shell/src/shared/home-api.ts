@@ -118,7 +118,7 @@ export interface FileSearchHit extends RecentEntry {
   needles: string[]
 }
 
-export type JevEndpoint = 'openrouter' | 'direct'
+export type JevEndpoint = 'openrouter' | 'direct' | 'custom'
 
 /** home search options persisted in app-settings.json under `fileSearch` */
 export interface FileSearchSettings {
@@ -126,6 +126,10 @@ export interface FileSearchSettings {
   rerank: boolean
   jevEndpoint: JevEndpoint
   jevKeys: Record<JevEndpoint, string>
+  /** OpenAI-style decisions URL of a custom Jev-compatible endpoint (e.g. a local gateway); empty = unset */
+  jevCustomUrl: string
+  /** model id sent to the custom endpoint; empty = accept the server's default */
+  jevCustomModel: string
 }
 
 export interface FileSearchRerank {
@@ -169,6 +173,8 @@ export interface HomeApi {
   testFileSearchRerank(input: {
     endpoint: JevEndpoint
     apiKey: string
+    customUrl?: string
+    customModel?: string
   }): Promise<{ ok: boolean; error?: string }>
   /** starred files (independent of the recent list), newest first (paged) */
   starred(query?: RecentQuery): Promise<RecentPage>

@@ -654,6 +654,7 @@ type TestResult = { ok: boolean; error?: string }
 const JEV_ENDPOINTS: { value: JevEndpoint; label: string }[] = [
   { value: 'openrouter', label: 'OpenRouter' },
   { value: 'direct', label: 'TypeSafe' },
+  { value: 'custom', label: 'Custom' },
 ]
 
 /**
@@ -800,6 +801,8 @@ function AiMediaPane({
           window.aiOffice.testFileSearchRerank?.({
             endpoint: fileSearch.jevEndpoint,
             apiKey: fileSearch.jevKeys[fileSearch.jevEndpoint],
+            customUrl: fileSearch.jevCustomUrl,
+            customModel: fileSearch.jevCustomModel,
           }) ?? Promise.resolve(fallback),
       ])
     }
@@ -1129,11 +1132,55 @@ function AiMediaPane({
                   onPick={(v) =>
                     setFileSearch({
                       ...fileSearch,
-                      jevEndpoint: v === 'direct' ? 'direct' : 'openrouter',
+                      jevEndpoint: v === 'direct' ? 'direct' : v === 'custom' ? 'custom' : 'openrouter',
                     })
                   }
                 />
               </div>
+              {fileSearch.jevEndpoint === 'custom' && (
+                <>
+                  <div className="set-field">
+                    <div className="set-field-text">
+                      <div className="set-field-stack">
+                        <label className="set-field-label" htmlFor="set-search-jev-url">
+                          {t('setAiBaseUrl')}
+                        </label>
+                      </div>
+                    </div>
+                    <input
+                      id="set-search-jev-url"
+                      className="set-input"
+                      type="text"
+                      value={fileSearch.jevCustomUrl}
+                      placeholder="https://…/decisions"
+                      spellCheck={false}
+                      onChange={(e) =>
+                        setFileSearch({ ...fileSearch, jevCustomUrl: e.target.value.trim() })
+                      }
+                    />
+                  </div>
+                  <div className="set-field">
+                    <div className="set-field-text">
+                      <div className="set-field-stack">
+                        <label className="set-field-label" htmlFor="set-search-jev-model">
+                          {t('setAiModelId')}
+                        </label>
+                      </div>
+                    </div>
+                    <input
+                      id="set-search-jev-model"
+                      className="set-input"
+                      type="text"
+                      value={fileSearch.jevCustomModel}
+                      placeholder="jev-1.13.0"
+                      spellCheck={false}
+                      onChange={(e) =>
+                        setFileSearch({ ...fileSearch, jevCustomModel: e.target.value.trim() })
+                      }
+                    />
+                  </div>
+                </>
+              )}
               {keyRow(
                 'set-search-jev-key',
                 fileSearch.jevKeys[fileSearch.jevEndpoint],

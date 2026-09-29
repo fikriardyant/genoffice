@@ -5,11 +5,43 @@
  * fails validation is an error; callers keep the local order.
  */
 
-export type JevEndpoint = 'openrouter' | 'direct'
+export type JevEndpoint = 'openrouter' | 'direct' | 'custom'
 
-const ENDPOINTS: Record<JevEndpoint, { url: string; model: string }> = {
+const ENDPOINTS: Record<Exclude<JevEndpoint, 'custom'>, { url: string; model: string }> = {
   openrouter: { url: 'https://openrouter.ai/api/alpha/decisions', model: 'typesafe/jev-1.13' },
   direct: { url: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.13.0' },
+}
+
+/** custom-endpoint shaping for a Jev-compatible gateway (e.g. 9Router or a local mirror) */
+export interface JevCustomConfig {
+  url?: string
+  model?: string
+}
+
+/** default model id sent when the custom endpoint leaves the model field empty */
+export const CUSTOM_DEFAULT_MODEL = 'jev-1.13.0'
+
+/** resolve the request URL and model id for one endpoint; throws `invalid-url` on a non-http(s) custom URL */
+export function resolveJevTarget(
+  endpoint: JevEndpoint,
+  custom?: JevCustomConfig,
+): { url: string; model: string; pinProvider: boolean } {
+  if (endpoint === 'custom') {
+    const raw = (custom?.url ?? '').trim()
+    let parsed: URL
+    try {
+      parsed = new URL(raw)
+    } catch {
+      throw new Error('invalid-url')
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('invalid-url')
+    }
+    const model = (custom?.model ?? '').trim() || CUSTOM_DEFAULT_MODEL
+    return { url: parsed.toString(), model, pinProvider: false }
+  }
+  const fixed = ENDPOINTS[endpoint]
+  return { url: fixed.url, model: fixed.model, pinProvider: endpoint === 'openrouter' }
 }
 
 export const MAX_DOCS = 20
@@ -66,8 +98,11 @@ export function prepare(
   query: string,
   docs: readonly JevDocument[],
   endpoint: JevEndpoint,
+  customModel?: string,
 ): { body: string; count: number } {
   if (!query.trim()) throw new Error('empty-request')
+  const model =
+    endpoint === 'custom' ? (customModel ?? '').trim() || CUSTOM_DEFAULT_MODEL : ENDPOINTS[endpoint].model
   const documents: JevDocument[] = []
   const make = () => {
     const state = { query: clip(query, MAX_QUERY_CHARS), documents }
@@ -85,9 +120,9 @@ export function prepare(
         zdr: true,
         data_collection: 'deny',
       }
-      return JSON.stringify({ model: ENDPOINTS.openrouter.model, state, questions, provider })
+      return JSON.stringify({ model, state, questions, provider })
     }
-    return JSON.stringify({ model: ENDPOINTS.direct.model, state, questions })
+    return JSON.stringify({ model, state, questions })
   }
   for (const d of docs.slice(0, MAX_DOCS)) {
     documents.push({
@@ -115,10 +150,24 @@ function num(v: unknown, min: number, max: number): number {
   return v
 }
 
-export function validate(raw: unknown, count: number, endpoint: JevEndpoint): JevJudgement {
+export function validate(
+  raw: unknown,
+  count: number,
+  endpoint: JevEndpoint,
+  expectedModel?: string,
+): JevJudgement {
   const r = obj(raw)
   if (endpoint === 'direct') {
     if (r.model !== ENDPOINTS.direct.model) throw new Error('model-mismatch')
+  } else if (endpoint === 'custom') {
+    // custom gateways may serve a pinned snapshot or an alias: honor the
+    // configured model when set, otherwise accept any non-empty model id
+    const want = (expectedModel ?? '').trim()
+    if (want) {
+      if (r.model !== want) throw new Error('model-mismatch')
+    } else if (typeof r.model !== 'string' || !r.model) {
+      throw new Error('model-mismatch')
+    }
   } else {
     if (typeof r.model !== 'string' || !OPENROUTER_MODEL_PATTERN.test(r.model))
       throw new Error('model-mismatch')
@@ -189,15 +238,17 @@ export async function evaluate(
   endpoint: JevEndpoint,
   key: string,
   send: JevTransport = fetchTransport,
+  custom?: JevCustomConfig,
 ): Promise<JevJudgement> {
   if (!key.trim()) throw new Error('missing-key')
-  const { body, count } = prepare(query, docs, endpoint)
+  const target = resolveJevTarget(endpoint, custom)
+  const { body, count } = prepare(query, docs, endpoint, target.model)
   const controller = new AbortController()
   const deadline = Date.now() + TIMEOUT_MS
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const r = await send(ENDPOINTS[endpoint].url, body, key, controller.signal)
+      const r = await send(target.url, body, key, controller.signal)
       if ((r.status === 429 || r.status === 529) && attempt === 0) {
         const seconds = Number(r.retryAfter)
         const wait = r.retryAfter
@@ -218,7 +269,7 @@ export async function evaluate(
       } catch {
         throw new Error('invalid-response')
       }
-      return validate(raw, count, endpoint)
+      return validate(raw, count, endpoint, target.model)
     }
     throw new Error('rate-limit')
   } finally {

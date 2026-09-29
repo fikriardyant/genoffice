@@ -10,7 +10,9 @@ const CACHE_MAX = 200
 export const DEFAULT_FILE_SEARCH_SETTINGS: FileSearchSettings = {
   rerank: false,
   jevEndpoint: 'openrouter',
-  jevKeys: { openrouter: '', direct: '' },
+  jevKeys: { openrouter: '', direct: '', custom: '' },
+  jevCustomUrl: '',
+  jevCustomModel: '',
 }
 
 export function normalizeFileSearchSettings(raw: unknown): FileSearchSettings {
@@ -20,10 +22,13 @@ export function normalizeFileSearchSettings(raw: unknown): FileSearchSettings {
     unknown
   >
   const key = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 512) : '')
+  const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '')
   return {
     rerank: r.rerank === true,
-    jevEndpoint: r.jevEndpoint === 'direct' ? 'direct' : 'openrouter',
-    jevKeys: { openrouter: key(keys.openrouter), direct: key(keys.direct) },
+    jevEndpoint: r.jevEndpoint === 'direct' ? 'direct' : r.jevEndpoint === 'custom' ? 'custom' : 'openrouter',
+    jevKeys: { openrouter: key(keys.openrouter), direct: key(keys.direct), custom: key(keys.custom) },
+    jevCustomUrl: str(r.jevCustomUrl, 2048),
+    jevCustomModel: str(r.jevCustomModel, 256),
   }
 }
 
@@ -53,12 +58,13 @@ export class SearchReranker {
     if (!settings.rerank || !key) return null
     const hits = this.store.excerptsFor(paths.slice(0, MAX_DOCS), q, EXCERPT_CHARS)
     if (hits.length < 2) return null
-    const cacheKey = [settings.jevEndpoint, q, ...hits.map((h) => h.path)].join('\n')
+    const custom = { url: settings.jevCustomUrl, model: settings.jevCustomModel }
+    const cacheKey = [settings.jevEndpoint, custom.url, custom.model, q, ...hits.map((h) => h.path)].join('\n')
     const cached = this.cache.get(cacheKey)
     if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.result
     const pending = this.inflight.get(cacheKey)
     if (pending) return pending
-    const call = this.judge(q, hits, settings.jevEndpoint, key, cacheKey).finally(() =>
+    const call = this.judge(q, hits, settings.jevEndpoint, key, cacheKey, custom).finally(() =>
       this.inflight.delete(cacheKey),
     )
     this.inflight.set(cacheKey, call)
@@ -71,6 +77,7 @@ export class SearchReranker {
     endpoint: JevEndpoint,
     key: string,
     cacheKey: string,
+    custom?: { url: string; model: string },
   ): Promise<FileSearchRerank | null> {
     const docs = hits.map((h) => ({
       title: h.name,
@@ -79,7 +86,7 @@ export class SearchReranker {
     }))
     let scores: number[]
     try {
-      scores = (await evaluate(q, docs, endpoint, key, this.send)).scores
+      scores = (await evaluate(q, docs, endpoint, key, this.send, custom)).scores
     } catch {
       return null
     }
@@ -98,7 +105,7 @@ export class SearchReranker {
 }
 
 export function jevEndpointOf(v: unknown): JevEndpoint {
-  return v === 'direct' ? 'direct' : 'openrouter'
+  return v === 'direct' ? 'direct' : v === 'custom' ? 'custom' : 'openrouter'
 }
 
 const PROBE_DOCS = [
@@ -111,10 +118,11 @@ export async function probeJev(
   endpoint: JevEndpoint,
   key: string,
   send?: JevTransport,
+  custom?: { url?: string; model?: string },
 ): Promise<{ ok: boolean; error?: string }> {
   if (!key.trim()) return { ok: false, error: 'Enter an API key' }
   try {
-    await evaluate('connection test', PROBE_DOCS, endpoint, key, send)
+    await evaluate('connection test', PROBE_DOCS, endpoint, key, send, custom)
     return { ok: true }
   } catch (e) {
     const code = e instanceof Error ? e.message : String(e)

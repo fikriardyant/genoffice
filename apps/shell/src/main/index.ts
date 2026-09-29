@@ -3842,11 +3842,21 @@ function registerHomeIpc(): void {
   )
 
   ipcMain.handle(HOME_CHANNELS.testFileSearchRerank, (_event, input: unknown) => {
-    const { endpoint, apiKey } = (input && typeof input === 'object' ? input : {}) as {
+    const { endpoint, apiKey, customUrl, customModel } = (input && typeof input === 'object' ? input : {}) as {
       endpoint?: unknown
       apiKey?: unknown
+      customUrl?: unknown
+      customModel?: unknown
     }
-    return probeJev(jevEndpointOf(endpoint), typeof apiKey === 'string' ? apiKey : '')
+    return probeJev(
+      jevEndpointOf(endpoint),
+      typeof apiKey === 'string' ? apiKey : '',
+      undefined,
+      {
+        url: typeof customUrl === 'string' ? customUrl : '',
+        model: typeof customModel === 'string' ? customModel : '',
+      },
+    )
   })
 
   // Starred files sort by mtime, which requires stat-ing them all first; they are hand-picked and few, so this is fine

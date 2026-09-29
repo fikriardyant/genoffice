@@ -92,6 +92,22 @@ describe('validate', () => {
     bad.answers.d0.probabilities = { 0: 0.9, 1: 0.1, 2: 0 }
     expect(() => validate(bad, 1, 'openrouter')).toThrow('invalid-response')
   })
+
+  it('sends the custom model and accepts the configured answer on a custom endpoint', () => {
+    const { body, count } = prepare('q', docs.slice(0, 1), 'custom', 'my-jev')
+    expect(count).toBe(1)
+    expect(JSON.parse(body).model).toBe('my-jev')
+    expect(JSON.parse(body).provider).toBeUndefined()
+    const { body: fallback } = prepare('q', docs.slice(0, 1), 'custom', '')
+    expect(JSON.parse(fallback).model).toBe('jev-1.13.0')
+    const r = validate(JSON.parse(answer([1], 'my-jev')), 1, 'custom', 'my-jev')
+    expect(r.scores).toEqual([1])
+    expect(() => validate(JSON.parse(answer([1], 'other')), 1, 'custom', 'my-jev')).toThrow(
+      'model-mismatch',
+    )
+    // empty configured model: any non-empty answer model passes
+    expect(validate(JSON.parse(answer([2], 'whatever')), 1, 'custom', '').scores).toEqual([2])
+  })
 })
 
 describe('evaluate', () => {
@@ -116,6 +132,26 @@ describe('evaluate', () => {
     ).rejects.toThrow('http-500')
     await expect(evaluate('q', docs, 'openrouter', '', ok(answer([1])))).rejects.toThrow(
       'missing-key',
+    )
+  })
+
+  it('hits the custom URL and rejects non-http(s) URLs', async () => {
+    const calls: string[] = []
+    const send: JevTransport = async (url) => {
+      calls.push(url)
+      return { status: 200, body: answer([2, 1, 0], 'my-jev') }
+    }
+    const r = await evaluate('q', docs, 'custom', 'k', send, {
+      url: 'http://127.0.0.1:20128/decisions',
+      model: 'my-jev',
+    })
+    expect(r.scores).toEqual([2, 1, 0])
+    expect(calls).toEqual(['http://127.0.0.1:20128/decisions'])
+    await expect(
+      evaluate('q', docs, 'custom', 'k', send, { url: 'file:///etc/passwd' }),
+    ).rejects.toThrow('invalid-url')
+    await expect(evaluate('q', docs, 'custom', 'k', send, { url: '' })).rejects.toThrow(
+      'invalid-url',
     )
   })
 })
@@ -185,7 +221,7 @@ describe('SearchReranker', () => {
     expect(
       await off.rerank('budget', SHOWN, {
         ...settings,
-        jevKeys: { openrouter: '', direct: '' },
+        jevKeys: { openrouter: '', direct: '', custom: '' },
       }),
     ).toBeNull()
     // the judged set is exactly the shown one: unknown paths drop, a single survivor is not judged
@@ -202,8 +238,29 @@ describe('SearchReranker', () => {
     ).toEqual({
       rerank: false,
       jevEndpoint: 'direct',
-      jevKeys: { openrouter: '', direct: 'abc' },
+      jevKeys: { openrouter: '', direct: 'abc', custom: '' },
+      jevCustomUrl: '',
+      jevCustomModel: '',
     })
+  })
+
+  it('keeps a custom endpoint with its URL, model and key', () => {
+    expect(
+      normalizeFileSearchSettings({
+        rerank: true,
+        jevEndpoint: 'custom',
+        jevKeys: { custom: ' k ' },
+        jevCustomUrl: ' http://127.0.0.1:20128/decisions ',
+        jevCustomModel: ' jev-1.13.0 ',
+      }),
+    ).toEqual({
+      rerank: true,
+      jevEndpoint: 'custom',
+      jevKeys: { openrouter: '', direct: '', custom: 'k' },
+      jevCustomUrl: 'http://127.0.0.1:20128/decisions',
+      jevCustomModel: 'jev-1.13.0',
+    })
+    expect(normalizeFileSearchSettings({ jevEndpoint: 'bogus' }).jevEndpoint).toBe('openrouter')
   })
 })
 
