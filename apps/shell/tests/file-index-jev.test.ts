@@ -107,6 +107,11 @@ describe('validate', () => {
     )
     // empty configured model: any non-empty answer model passes
     expect(validate(JSON.parse(answer([2], 'whatever')), 1, 'custom', '').scores).toEqual([2])
+    // gateways may strip the vendor prefix from the answering id
+    expect(validate(JSON.parse(answer([1], 'jev-1.13-free')), 1, 'custom', 'ocz/jev-1.13-free').scores).toEqual([1])
+    expect(() => validate(JSON.parse(answer([1], 'jev-1.12')), 1, 'custom', 'ocz/jev-1.13-free')).toThrow(
+      'model-mismatch',
+    )
   })
 })
 

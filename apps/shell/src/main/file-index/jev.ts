@@ -161,10 +161,14 @@ export function validate(
     if (r.model !== ENDPOINTS.direct.model) throw new Error('model-mismatch')
   } else if (endpoint === 'custom') {
     // custom gateways may serve a pinned snapshot or an alias: honor the
-    // configured model when set, otherwise accept any non-empty model id
+    // configured model when set, otherwise accept any non-empty model id.
+    // Gateways also rewrite ids (e.g. `ocz/jev-1.13-free` answers as
+    // `jev-1.13-free`), so compare after stripping any `vendor/` prefix.
     const want = (expectedModel ?? '').trim()
     if (want) {
-      if (r.model !== want) throw new Error('model-mismatch')
+      const base = (s: unknown) =>
+        typeof s === 'string' && s.includes('/') ? s.split('/').pop() : s
+      if (r.model !== want && base(r.model) !== base(want)) throw new Error('model-mismatch')
     } else if (typeof r.model !== 'string' || !r.model) {
       throw new Error('model-mismatch')
     }
