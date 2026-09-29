@@ -269,7 +269,10 @@ export async function evaluate(
       } catch {
         throw new Error('invalid-response')
       }
-      return validate(raw, count, endpoint, target.model)
+      // custom: only pin the model check when the user configured one;
+      // an empty model field accepts whatever non-empty id the server reports
+      const expected = endpoint === 'custom' ? (custom?.model ?? '').trim() : target.model
+      return validate(raw, count, endpoint, expected)
     }
     throw new Error('rate-limit')
   } finally {

@@ -154,6 +154,15 @@ describe('evaluate', () => {
       'invalid-url',
     )
   })
+
+  it('accepts any server model when the custom model field is empty', async () => {
+    const send: JevTransport = async () => ({ status: 200, body: answer([2, 1, 0], 'ag/gemini-3.8-flash-high') })
+    const r = await evaluate('q', docs, 'custom', 'k', send, {
+      url: 'http://127.0.0.1:20128/decisions',
+      model: '',
+    })
+    expect(r.scores).toEqual([2, 1, 0])
+  })
 })
 
 describe('SearchReranker', () => {
