@@ -360,6 +360,7 @@ export async function chatOpenAiCompatible(
     },
     body: JSON.stringify({
       model: config.model,
+      stream: false,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
